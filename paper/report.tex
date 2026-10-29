@@ -48,13 +48,21 @@ The experiment reports owner API calls per second, sample standard deviation, an
 \begin{equation}
   \bar{x}=\frac{1}{n}\sum_{i=1}^{n}x_i,
 \end{equation}
-and the sample standard deviation uses the $n-1$ denominator. The interval is computed as
+and the sample standard deviation is
+\begin{equation}
+  s=\sqrt{\frac{1}{n-1}\sum_{i=1}^{n}(x_i-\bar{x})^2}.
+\end{equation}
+The interval is computed as
 \begin{equation}
   \bar{x}\pm t_{n-1,0.975}\frac{s}{\sqrt{n}},
 \end{equation}
 where $t_{n-1,0.975}$ is the two-sided Student-$t$ critical value. The plotted error bars instead show one sample standard deviation, as labelled. These intervals describe uncertainty in the estimated mean across these repetitions under this machine and harness; they do not include uncertainty from changing hardware, compiler, queue revision, or workload.
 
-I normalize each mean to the zero-steal mean as $100\bar{x}_r/\bar{x}_0$; the corresponding relative drop is $100(1-\bar{x}_r/\bar{x}_0)$. These percentages make the local change easy to see, but they do not explain its cause. Nor is a requested target necessarily the rate the queue achieves: that depends on the queue state, owner activity, thief, delay, and scheduler.
+For target $r$, normalized throughput and relative drop are
+\begin{equation}
+  Q_r=100\frac{\bar{x}_r}{\bar{x}_0},\qquad D_r=100-Q_r,
+\end{equation}
+where $\bar{x}_0$ is the zero-steal mean. These percentages make the local change easy to see, but they do not explain its cause. Nor is a requested target necessarily the rate the queue achieves: that depends on the queue state, owner activity, thief, delay, and scheduler.
 
 \subsection{Sources of Queue Overhead}
 Several mechanisms determine performance in a concurrent queue. Atomic read-modify-write operations can serialize access to a cache line. Memory-order constraints can prevent reordering and increase the cost of fast-path operations. False sharing can make logically independent fields contend when they occupy the same cache line. A thief can also invalidate metadata that the owner will access again, causing cache-coherence traffic even when owner and thief consume different task slots. Queue occupancy changes which blocks are available and how often the owner must advance or reclaim them. These costs can interact: changing block size may alter both the frequency of block transitions and the amount of work visible to a thief.
@@ -114,11 +122,19 @@ The harness counts returned values; it does not keep a set of task IDs. A duplic
 \subsection{Throughput Workload and Calibration}
 For the throughput sweep, the queue has four blocks of 256 entries. The owner pushes 768 tasks and then calls \texttt{pop\_back} 768 times. A one-at-a-time push/pop loop produced almost no successful steals in preliminary runs, so I switched to bursts spanning three blocks. This gave the thief a better chance to find stealable work in an older block. It also makes the experiment different from the paper's fill-then-drain test.
 
-I calculate owner throughput by dividing its queue API-call count by the measured time. Failed push retries and pop calls returning empty are included, so this is not a task-completion rate or total throughput across both threads. Each of the 0\%, 1\%, 5\%, 10\%, and 20\% targets was measured for two seconds in 20 repetitions.
+For trial $i$, the owner's API-call rate is
+\begin{equation}
+  x_i=\frac{O_i}{t_i},\qquad O_i=P_i^{\mathrm{attempts}}+G_i,
+\end{equation}
+where $P_i^{\mathrm{attempts}}$ counts every \texttt{push\_back} call, including retries, $G_i$ counts every \texttt{pop\_back} call, and $t_i$ is the timed interval. These are the benchmark's \texttt{owner\_ops} and \texttt{elapsed\_seconds} counters. Empty pops are included, so $x_i$ is neither completed tasks per second nor combined owner-plus-thief throughput. Each of the 0\%, 1\%, 5\%, 10\%, and 20\% targets was measured for two seconds in 20 repetitions.
 
 The zero-steal trial still starts the thief thread, but it waits without calling the queue. In other trials, the thief calls \texttt{steal\_front} and spin-waits for the calibrated delay. For each nonzero target, calibration uses up to eight 180-ms pilot windows and adjusts the delay based on successful steals per owner transaction. The log records the selected delay, pilot results, and achieved rate. I used a spin wait after timer sleeps proved too coarse for these short intervals; the spin loop itself uses CPU time and is affected by scheduling.
 
-The achieved rates were 0.00\%, 0.90\%, 5.38\%, 5.40\%, and 5.39\%. Calibration came close to the 1\% and 5\% targets but did not reach 10\% or 20\%. Figures retain the requested target labels; the text and calibration CSV give the achieved values. When discussing the upper settings below, I refer to their target labels and state the actual rates where relevant.
+For a timed trial, I define the achieved steal rate as
+\begin{equation}
+  f_i=100\frac{S_i}{T_i},
+\end{equation}
+where $S_i$ is the number of successful steals and $T_i$ is the number of owner push/pop pairs. In the code, these are \texttt{successful\_steals} and \texttt{owner\_transactions}; the latter increments once per pop, not once per failed push retry. Thus, $f_i$ is not the fraction of all submitted items stolen. The achieved rates were 0.00\%, 0.90\%, 5.38\%, 5.40\%, and 5.39\%. Calibration came close to the 1\% and 5\% targets but did not reach 10\% or 20\%. Figures retain the requested target labels; the text and calibration CSV give the achieved values.
 
 \subsection{Statistical Reporting}
 For each target I collected 20 two-second measurements. The exporter calculates the mean, sample standard deviation, and a two-sided 95\% Student-$t$ confidence interval. Throughput is also normalized to the zero-steal mean. The plot shows normalized means with one-standard-deviation error bars; the table reports calls per second, relative throughput, and confidence intervals.
@@ -218,6 +234,9 @@ I tested stdexec's LIFO BWoS queue on an M4 using one owner and one thief. The c
 The main lesson from this experiment is about measurement: the target rate, achieved rate, and throughput counter all need to be stated to interpret the result. I initially expected five distinct steal conditions, but the upper three targets produced essentially the same achieved rate. The data show that this workload's owner throughput was lower when the thief was active; they do not show how BWoS compares with another queue or how it scales to more workers.
 
 For a follow-up, I would first improve rate control and keep queue occupancy steadier while changing the owner-to-thief balance. I would record attempts, successful steals, and task IDs separately, randomize run order, and compare stdexec with at least one baseline. Only after that would I expand to more worker counts. Evaluating NUMA behavior would require a multi-socket machine.
+
+\section*{Code and Data Availability}
+The benchmark source, build and export scripts, raw log, and generated result files are maintained in the project repository \cite{aibak2026bwos}. The run-specific stdexec commit and compiler details are recorded with the methods file. The reported measurements correspond to that recorded run; rerunning against a later stdexec revision may produce different results.
 
 \bibliographystyle{IEEEtran}
 \bibliography{references}
