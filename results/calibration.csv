@@ -1,0 +1,6 @@
+steal_rate_target_pct,mean_achieved_steal_pct,mean_delay_ns,target_met_within_20pct
+0,0.0000,0.0,1
+1,0.8990,214.0,1
+5,5.3802,25.0,1
+10,5.4002,2.0,0
+20,5.3897,1.0,0

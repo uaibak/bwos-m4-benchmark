@@ -1,0 +1,16 @@
+# CMake build tree, including FetchContent dependencies and local export environment.
+/build/
+
+# macOS metadata and Python bytecode.
+.DS_Store
+__pycache__/
+*.py[cod]
+
+# TeX intermediates generated when compiling the paper.
+paper/*.aux
+paper/*.bbl
+paper/*.blg
+paper/*.log
+paper/*.out
+paper/*.synctex.gz
+paper/*.xdv
